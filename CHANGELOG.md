@@ -4,20 +4,21 @@
 
 ```
 cbr_reader/
-├── server.js                 # Backend Express — API REST, estrazione CBR/CBZ, generazione cover
-├── package.json              # Dipendenze: express, node-unrar-js, yauzl, sharp
+├── server.js                 # Backend Express — API REST, MongoDB, estrazione CBR/CBZ
+├── db.js                     # Modulo connessione MongoDB, indici, seed colori
+├── package.json              # Dipendenze: express, mongodb, node-unrar-js, yauzl, sharp
 ├── package-lock.json
-├── progress.json             # Progresso lettura per fumetto (generato automaticamente)
 ├── .impeccable.md            # Design context — linee guida estetiche del progetto
 ├── CLAUDE.md                 # Contesto progetto per Claude Code
 ├── CHANGELOG.md              # Questo file
-├── .gitignore                # Esclude node_modules/, cache/, .DS_Store
+├── ROADMAP-v2.md             # Piano implementazione v2
+├── .gitignore                # Esclude node_modules/, cache/, progress.json, .DS_Store
 ├── public/
-│   ├── index.html            # SPA — struttura HTML (libreria + reader)
+│   ├── index.html            # SPA — libreria, reader, action sheet, pannello note
 │   ├── css/
-│   │   └── style.css         # Tema dark & immersivo, layout responsive
+│   │   └── style.css         # Tema dark & immersivo, layout responsive, nuovi componenti v2
 │   └── js/
-│       └── app.js            # Logica frontend — navigazione, gesture, stato
+│       └── app.js            # Logica frontend — navigazione, gesture, preferiti, note
 ├── cache/                    # Cache immagini estratte e copertine (generato a runtime)
 │   ├── covers/               # Copertine WebP 300x450 generate con sharp
 │   └── <comic-hash>/         # Pagine estratte per ogni fumetto aperto
@@ -134,9 +135,68 @@ Il server stampa l'indirizzo di rete locale (es. `http://192.168.1.8:3000`) da a
 - Rimosso `position: relative` da `#reader` che sovrascriveva il `position: absolute` della classe `.view`, causando la perdita delle dimensioni del container (schermo nero)
 - Risultato: l'immagine del fumetto usa il 100% dello schermo in qualsiasi orientamento; tap per nascondere i chrome = full-screen totale
 
+### v2.0 — MongoDB + Preferiti + Note
+
+**Migrazione a MongoDB:**
+- Tutto il progresso di lettura migrato da `progress.json` a MongoDB (collection `progress`)
+- Migrazione automatica al primo avvio: legge il JSON, bulk insert in MongoDB, rinomina in `.bak`
+- Nuovo modulo `db.js` per connessione, indici, seed colori di default
+- Startup asincrono: `connect()` → migrazione → `app.listen()`
+
+**Sistema Preferiti:**
+- Collection `favorites`: un documento per fumetto con `isFavorite`, `color`, `folder`, `compartment`
+- Cuore tappabile su ogni card della libreria (toggle immediato senza aprire menu)
+- Palette 8 colori (seedati al primo avvio) per taggare i fumetti
+- Cartelle e categorie utente (creazione al volo tramite prompt dialog)
+- Barra organizzazione: chip "Tutti" / "Preferiti" / cartelle / categorie per filtrare la griglia
+- Action sheet (long-press su mobile, click destro su desktop): menu completo per preferiti, colore, cartella, categoria, note
+
+**Note per fumetto:**
+- Collection `notes`: multiple note per fumetto con testo, timestamp creazione/modifica
+- Pannello note slide-up nel reader (pulsante "Note" nella toolbar)
+- Aggiunta, modifica, eliminazione note con feedback toast
+- Accessibile anche dall'action sheet in libreria
+
+**API — 15 nuovi endpoint:**
+- Preferiti: `GET/PUT/DELETE /api/favorites/:id`
+- Note: `GET/POST /api/notes/:comicId`, `PUT/DELETE /api/notes/:comicId/:noteId`
+- Cartelle: `GET/POST/DELETE /api/user-folders`
+- Colori: `GET/POST /api/user-colors`
+
+**Dipendenza aggiunta:** `mongodb` (driver nativo, no Mongoose)
+
+### v2.1 — Fix scroll accidentale apre fumetto
+
+**Problema**: Scrollando la griglia su mobile, il touchend sulla card apriva il fumetto perché il flag di scroll non veniva tracciato.
+
+**Fix**: Aggiunto flag `didScroll` che si attiva al primo `touchmove` — il `touchend` apre il fumetto solo se `didScroll` è `false`.
+
+### v2.2 — Sezione "Stai leggendo" + cuore visibile
+
+**Sezione "Stai leggendo":**
+- Riga orizzontale scorrevole in cima alla libreria con i fumetti iniziati ma non finiti
+- Ordinati per timestamp più recente, max 15 fumetti
+- Ogni card mostra copertina, titolo, percentuale di avanzamento in ambra
+- Si comprime automaticamente con transizione smooth quando si scrolla la griglia verso il basso (oltre 60px)
+- Riappare quando si torna in cima (sotto 10px)
+
+**Cuore tappabile su ogni card:**
+- Icona cuore sempre visibile in alto a destra su ogni copertina
+- Cuore vuoto (contorno bianco) = non preferito
+- Cuore rosso pieno = preferito
+- Tap diretto per toggle (stopPropagation impedisce apertura fumetto)
+- Non serve più il long-press per la funzione base dei preferiti
+
 ---
 
 ## Note tecniche
+
+### MongoDB
+- Database: `cbr_reader` su `mongodb://localhost:27017`
+- 5 collection: `progress`, `favorites`, `notes`, `user_folders`, `user_colors`
+- `comicId` usato come `_id` in `progress` e `favorites` (index gratuito, upsert pulito)
+- Index su `notes.comicId`, unique index su `user_folders.{name, type}`
+- 8 colori di default seedati automaticamente al primo avvio
 
 ### Caching
 - Le immagini estratte dai CBR/CBZ vengono salvate in `cache/<comic-hash>/`
@@ -145,9 +205,9 @@ Il server stampa l'indirizzo di rete locale (es. `http://192.168.1.8:3000`) da a
 - La lista fumetti è cached in memoria con TTL di 60 secondi
 
 ### Progresso lettura
-- Salvato in `progress.json` nella root del progetto
+- Salvato in MongoDB collection `progress` (migrato da `progress.json`)
 - Debounce di 1 secondo per evitare scritture eccessive
-- Formato: `{ "<comic-id>": { page, totalPages, timestamp } }`
+- Formato documento: `{ _id: comicId, page, totalPages, timestamp }`
 
 ### Gestione errori
 - Se un archivio non può essere estratto, l'errore viene loggato e il client riceve HTTP 500

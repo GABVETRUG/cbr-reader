@@ -7,6 +7,8 @@ const yauzl = require('yauzl');
 const sharp = require('sharp');
 const crypto = require('crypto');
 
+const { connect, getDb, ObjectId } = require('./db');
+
 const app = express();
 const PORT = 3000;
 const COMICS_DIR = '/Volumes/Seagate Basic/DYLAN_DOG';
@@ -219,16 +221,21 @@ async function generateCover(comic) {
 // --- API Routes ---
 
 // List all comics
-app.get('/api/comics', (req, res) => {
+app.get('/api/comics', async (req, res) => {
   const comics = getComics();
-  const progress = loadProgress();
+  const progress = await loadProgress();
+  const favDocs = await getDb().collection('favorites').find({}).toArray();
+  const favMap = {};
+  for (const f of favDocs) favMap[f._id] = f;
+
   const result = comics.map(c => ({
     id: c.id,
     title: c.title,
     number: c.number,
     folder: c.folder,
     filename: c.filename,
-    progress: progress[c.id] || null
+    progress: progress[c.id] || null,
+    favorite: favMap[c.id] || null
   }));
   res.json(result);
 });
@@ -299,33 +306,130 @@ app.get('/api/comics/:id/pages/:page', async (req, res) => {
   }
 });
 
-// --- Reading Progress ---
+// --- Reading Progress (MongoDB) ---
 
-function loadProgress() {
-  try {
-    if (fs.existsSync(PROGRESS_FILE)) {
-      return JSON.parse(fs.readFileSync(PROGRESS_FILE, 'utf-8'));
-    }
-  } catch (e) { /* ignore */ }
-  return {};
+async function loadProgress() {
+  const docs = await getDb().collection('progress').find({}).toArray();
+  const result = {};
+  for (const doc of docs) {
+    result[doc._id] = { page: doc.page, totalPages: doc.totalPages, timestamp: doc.timestamp };
+  }
+  return result;
 }
 
-function saveProgress(data) {
-  fs.writeFileSync(PROGRESS_FILE, JSON.stringify(data, null, 2));
-}
-
-app.get('/api/progress', (req, res) => {
-  res.json(loadProgress());
+app.get('/api/progress', async (req, res) => {
+  res.json(await loadProgress());
 });
 
-app.post('/api/progress/:id', (req, res) => {
-  const progress = loadProgress();
-  progress[req.params.id] = {
-    page: req.body.page,
-    totalPages: req.body.totalPages,
-    timestamp: Date.now()
-  };
-  saveProgress(progress);
+app.post('/api/progress/:id', async (req, res) => {
+  await getDb().collection('progress').updateOne(
+    { _id: req.params.id },
+    { $set: { page: req.body.page, totalPages: req.body.totalPages, timestamp: Date.now() } },
+    { upsert: true }
+  );
+  res.json({ ok: true });
+});
+
+// --- Favorites ---
+
+app.get('/api/favorites', async (req, res) => {
+  const docs = await getDb().collection('favorites').find({}).toArray();
+  res.json(docs);
+});
+
+app.put('/api/favorites/:id', async (req, res) => {
+  const { isFavorite, color, folder, compartment } = req.body;
+  await getDb().collection('favorites').updateOne(
+    { _id: req.params.id },
+    {
+      $set: { isFavorite, color: color || null, folder: folder || null, compartment: compartment || null, updatedAt: Date.now() },
+      $setOnInsert: { createdAt: Date.now() }
+    },
+    { upsert: true }
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/api/favorites/:id', async (req, res) => {
+  await getDb().collection('favorites').deleteOne({ _id: req.params.id });
+  res.json({ ok: true });
+});
+
+// --- Notes ---
+
+app.get('/api/notes/:comicId', async (req, res) => {
+  const docs = await getDb().collection('notes')
+    .find({ comicId: req.params.comicId })
+    .sort({ createdAt: -1 })
+    .toArray();
+  res.json(docs);
+});
+
+app.post('/api/notes/:comicId', async (req, res) => {
+  const now = Date.now();
+  const result = await getDb().collection('notes').insertOne({
+    comicId: req.params.comicId,
+    text: req.body.text,
+    createdAt: now,
+    updatedAt: now
+  });
+  res.json({ ok: true, noteId: result.insertedId });
+});
+
+app.put('/api/notes/:comicId/:noteId', async (req, res) => {
+  await getDb().collection('notes').updateOne(
+    { _id: new ObjectId(req.params.noteId), comicId: req.params.comicId },
+    { $set: { text: req.body.text, updatedAt: Date.now() } }
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/api/notes/:comicId/:noteId', async (req, res) => {
+  await getDb().collection('notes').deleteOne(
+    { _id: new ObjectId(req.params.noteId), comicId: req.params.comicId }
+  );
+  res.json({ ok: true });
+});
+
+// --- User Folders & Compartments ---
+
+app.get('/api/user-folders', async (req, res) => {
+  const docs = await getDb().collection('user_folders').find({}).toArray();
+  const folders = docs.filter(d => d.type === 'folder').map(d => ({ id: d._id, name: d.name }));
+  const compartments = docs.filter(d => d.type === 'compartment').map(d => ({ id: d._id, name: d.name }));
+  res.json({ folders, compartments });
+});
+
+app.post('/api/user-folders', async (req, res) => {
+  const { name, type } = req.body;
+  if (!name || !['folder', 'compartment'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid name or type' });
+  }
+  try {
+    await getDb().collection('user_folders').insertOne({ name, type, createdAt: Date.now() });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ error: 'Already exists' });
+    throw err;
+  }
+});
+
+app.delete('/api/user-folders/:id', async (req, res) => {
+  await getDb().collection('user_folders').deleteOne({ _id: new ObjectId(req.params.id) });
+  res.json({ ok: true });
+});
+
+// --- User Colors ---
+
+app.get('/api/user-colors', async (req, res) => {
+  const docs = await getDb().collection('user_colors').find({}).toArray();
+  res.json(docs);
+});
+
+app.post('/api/user-colors', async (req, res) => {
+  const { hex, label } = req.body;
+  if (!hex) return res.status(400).json({ error: 'hex is required' });
+  await getDb().collection('user_colors').insertOne({ hex, label: label || '', createdAt: Date.now() });
   res.json({ ok: true });
 });
 
@@ -347,17 +451,65 @@ function getLocalIP() {
   return '0.0.0.0';
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+// --- Migration ---
+
+async function migrateProgressJson() {
+  if (!fs.existsSync(PROGRESS_FILE)) return;
+
+  const db = getDb();
+  const existing = await db.collection('progress').countDocuments();
+  if (existing > 0) {
+    console.log('  Progress already in MongoDB, skipping migration.');
+    return;
+  }
+
+  try {
+    const data = JSON.parse(fs.readFileSync(PROGRESS_FILE, 'utf-8'));
+    const entries = Object.entries(data);
+    if (entries.length === 0) return;
+
+    const ops = entries.map(([id, prog]) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { page: prog.page, totalPages: prog.totalPages, timestamp: prog.timestamp } },
+        upsert: true
+      }
+    }));
+
+    await db.collection('progress').bulkWrite(ops);
+    console.log(`  Migrated ${entries.length} progress entries to MongoDB.`);
+
+    fs.renameSync(PROGRESS_FILE, PROGRESS_FILE + '.bak');
+    console.log('  Renamed progress.json to progress.json.bak');
+  } catch (err) {
+    console.error('  Migration error:', err.message);
+  }
+}
+
+// --- Start server ---
+
+async function start() {
+  await connect();
+  console.log('  Connected to MongoDB.');
+  await migrateProgressJson();
+
   const localIP = getLocalIP();
-  console.log('');
-  console.log('  ╔══════════════════════════════════════════╗');
-  console.log('  ║         📚 CBR Reader is running         ║');
-  console.log('  ╠══════════════════════════════════════════╣');
-  console.log(`  ║  Local:   http://localhost:${PORT}          ║`);
-  console.log(`  ║  Network: http://${localIP}:${PORT}    ║`);
-  console.log('  ╚══════════════════════════════════════════╝');
-  console.log('');
-  console.log(`  Comics directory: ${COMICS_DIR}`);
-  console.log(`  Open the Network URL on your phone!`);
-  console.log('');
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log('');
+    console.log('  ╔══════════════════════════════════════════╗');
+    console.log('  ║         📚 CBR Reader is running         ║');
+    console.log('  ╠══════════════════════════════════════════╣');
+    console.log(`  ║  Local:   http://localhost:${PORT}          ║`);
+    console.log(`  ║  Network: http://${localIP}:${PORT}    ║`);
+    console.log('  ╚══════════════════════════════════════════╝');
+    console.log('');
+    console.log(`  Comics directory: ${COMICS_DIR}`);
+    console.log(`  Open the Network URL on your phone!`);
+    console.log('');
+  });
+}
+
+start().catch(err => {
+  console.error('Failed to start:', err);
+  process.exit(1);
 });

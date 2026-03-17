@@ -37,8 +37,19 @@
       <button class="filter-chip active" data-folder="">Tutti</button>
     </div>
 
+    <div id="orgBar" class="org-bar hidden">
+      <button class="org-chip active" data-view="all">Tutti</button>
+      <button class="org-chip" data-view="favorites">Preferiti</button>
+      <!-- Dynamic folder/compartment chips appended by JS -->
+    </div>
+
     <div id="statsBar" class="stats-bar">
       <span id="comicCount">Caricamento...</span>
+    </div>
+
+    <div id="readingSection" class="reading-section hidden">
+      <h2 class="section-title">Stai leggendo</h2>
+      <div id="readingRow" class="reading-row"></div>
     </div>
 
     <div id="comicsGrid" class="comics-grid">
@@ -110,10 +121,79 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
           </button>
         </div>
+        <button id="toolbarNotesBtn" class="toolbar-btn" aria-label="Note">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          <span>Note</span>
+        </button>
         <button id="toolbarModeBtn" class="toolbar-btn" aria-label="Cambia modalità">
           <svg id="toolbarModeIconH" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
           <span id="toolbarModeLabel">Swipe</span>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notes Panel (in reader) -->
+  <div id="notesPanel" class="notes-panel hidden">
+    <div class="notes-panel-backdrop"></div>
+    <div class="notes-panel-content">
+      <div class="notes-header">
+        <span>Note</span>
+        <button id="closeNotesBtn" class="icon-btn-sm" aria-label="Chiudi">&times;</button>
+      </div>
+      <div id="notesList" class="notes-list">
+        <!-- Notes rendered dynamically -->
+      </div>
+      <div class="notes-input">
+        <textarea id="noteInput" placeholder="Scrivi una nota..." rows="2"></textarea>
+        <button id="saveNoteBtn" class="accent-btn">Salva</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action Sheet (long-press on comic card) -->
+  <div id="actionSheet" class="action-sheet hidden">
+    <div class="action-sheet-backdrop"></div>
+    <div class="action-sheet-content">
+      <div class="action-sheet-header">
+        <span id="actionSheetTitle"></span>
+        <button id="actionSheetClose" class="icon-btn-sm" aria-label="Chiudi">&times;</button>
+      </div>
+      <div class="action-sheet-body">
+        <button class="action-item" data-action="toggleFavorite">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          <span id="favActionLabel">Aggiungi ai preferiti</span>
+        </button>
+        <div class="action-item action-color-row">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12" r="2.5"/><path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12c0 2.4.85 4.6 2.26 6.33.67.82 2.55 1.67 3.74 1.67h1a1 1 0 0 0 1-1v-.5c0-.55.45-1 1-1s1 .45 1 1v.5a1 1 0 0 0 1 1h1"/></svg>
+          <span>Colore</span>
+          <div id="colorPalette" class="color-palette"></div>
+        </div>
+        <button class="action-item" data-action="assignFolder">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span id="folderActionLabel">Cartella</span>
+        </button>
+        <button class="action-item" data-action="assignCompartment">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          <span id="compartmentActionLabel">Categoria</span>
+        </button>
+        <button class="action-item" data-action="openNotes">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          <span>Note</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prompt Dialog (for folder/compartment names) -->
+  <div id="promptDialog" class="prompt-dialog hidden">
+    <div class="prompt-dialog-backdrop"></div>
+    <div class="prompt-dialog-content">
+      <p id="promptDialogTitle"></p>
+      <input type="text" id="promptDialogInput" autocomplete="off">
+      <div class="prompt-dialog-actions">
+        <button id="promptDialogCancel" class="prompt-btn">Annulla</button>
+        <button id="promptDialogOk" class="accent-btn">OK</button>
       </div>
     </div>
   </div>
