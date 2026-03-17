@@ -306,6 +306,7 @@ html, body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   padding: 0 16px calc(var(--safe-bottom) + 20px);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -332,17 +333,12 @@ html, body {
 .comic-card {
   position: relative;
   cursor: pointer;
-  transition: transform var(--transition-spring);
-  animation: cardFadeIn var(--transition-smooth) backwards;
+  will-change: transform;
+  contain: layout style paint;
 }
 
 .comic-card:active {
   transform: scale(0.95);
-}
-
-@keyframes cardFadeIn {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 .comic-cover {
@@ -351,14 +347,12 @@ html, body {
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--bg-elevated);
-  box-shadow: var(--shadow-card);
 }
 
 .comic-cover img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: opacity var(--transition-smooth);
 }
 
 .comic-cover img.loading {
@@ -802,17 +796,7 @@ html, body {
 
 /* Skeleton loading for covers */
 .skeleton {
-  background: linear-gradient(90deg,
-    var(--bg-elevated) 0%,
-    var(--bg-hover) 50%,
-    var(--bg-elevated) 100%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  background: var(--bg-elevated);
 }
 
 /* Reading mode indicator */

@@ -209,6 +209,24 @@ Il server stampa l'indirizzo di rete locale (es. `http://192.168.1.8:3000`) da a
 - Icona stilizzata con libro e scritta "DD" in ambra/oro su sfondo nero
 - 4 varianti: 192px, 512px, 512px maskable (padding extra), 180px Apple Touch
 
+### v2.4 — Ottimizzazione performance scroll
+
+**Problema**: Lo scroll della libreria (310 card) era poco fluido sia su Mac che su iPhone a causa di animazioni, ombre e listener eccessivi.
+
+**Rimosso:**
+- 310 animazioni `cardFadeIn` individuali con `animation-delay`
+- 310 animazioni `shimmer` (gradient animato continuo su ogni placeholder)
+- `box-shadow` su ogni card (costoso durante scroll/compositing)
+- `transition: opacity` su ogni immagine cover
+- ~1860 event listener individuali (6 per ognuna delle 310 card)
+
+**Aggiunto:**
+- **Event delegation**: un unico set di listener `touchstart/touchmove/touchend/click/contextmenu` sulla griglia, che identifica la card tramite `e.target.closest()`
+- `contain: layout style paint` su `.comic-card` — isola il rendering di ogni card dal resto del DOM
+- `will-change: transform` per promuovere le card a layer GPU
+- `-webkit-overflow-scrolling: touch` sulla griglia per scroll nativo iOS
+- Placeholder statico (colore solido) al posto dell'animazione shimmer
+
 ---
 
 ## Note tecniche

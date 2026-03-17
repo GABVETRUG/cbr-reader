@@ -250,6 +250,8 @@
 
   // --- Render Comics Grid ---
 
+  const HEART_SVG = `<svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`;
+
   function renderComics() {
     renderReadingSection();
 
@@ -262,22 +264,20 @@
       return;
     }
 
-    const heartSvg = `<svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`;
-
-    const html = state.filteredComics.map((comic, i) => {
+    const html = state.filteredComics.map((comic) => {
       const progressHtml = comic.progress
         ? `<div class="comic-progress"><div class="comic-progress-fill" style="width: ${Math.round((comic.progress.page / comic.progress.totalPages) * 100)}%"></div></div>`
         : '';
       const numberText = comic.number !== null ? `#${comic.number}` : '';
       const fav = comic.favorite;
       const isFav = fav && fav.isFavorite;
-      const favBtnHtml = `<button class="card-favorite${isFav ? ' is-fav' : ''}" data-fav-id="${comic.id}">${heartSvg}</button>`;
+      const favBtnHtml = `<button class="card-favorite${isFav ? ' is-fav' : ''}" data-fav-id="${comic.id}">${HEART_SVG}</button>`;
       const colorHtml = fav && fav.color
         ? `<div class="card-color-dot" style="background:${fav.color}"></div>`
         : '';
 
       return `
-        <div class="comic-card" data-id="${comic.id}" style="animation-delay: ${Math.min(i * 30, 600)}ms">
+        <div class="comic-card" data-id="${comic.id}">
           <div class="comic-cover">
             <div class="cover-placeholder skeleton"><span>${comic.number || '?'}</span></div>
             <img data-src="/api/comics/${comic.id}/cover" alt="${escapeAttr(comic.title)}" class="loading" loading="lazy">
@@ -304,69 +304,78 @@
       });
     }, { rootMargin: '200px' });
     dom.comicsGrid.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
+  }
 
-    // Favorite button tap handler
-    dom.comicsGrid.querySelectorAll('.card-favorite').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const comicId = btn.dataset.favId;
-        const comic = state.comics.find(c => c.id === comicId);
-        if (!comic) return;
-        const isFav = comic.favorite && comic.favorite.isFavorite;
-        if (isFav) {
-          await api.removeFavorite(comicId);
-          comic.favorite = null;
-        } else {
-          await setFavoriteField(comicId, { isFavorite: true });
-        }
-        // Update button state instantly
-        btn.classList.toggle('is-fav', !isFav);
-        updateCount();
-      });
+  // --- Grid event delegation (single listener for all cards) ---
 
-      // Prevent touch events on heart from triggering card open
-      btn.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
-      btn.addEventListener('touchend', (e) => e.stopPropagation(), { passive: true });
-    });
+  let gridPressTimer = null;
+  let gridDidLongPress = false;
+  let gridDidScroll = false;
+  let gridTouchTarget = null;
 
-    // Click + long-press handlers on cards
-    dom.comicsGrid.querySelectorAll('.comic-card').forEach(card => {
-      let pressTimer = null;
-      let didLongPress = false;
-      let didScroll = false;
+  dom.comicsGrid.addEventListener('touchstart', (e) => {
+    // Heart button — stop here
+    const favBtn = e.target.closest('.card-favorite');
+    if (favBtn) return;
 
-      card.addEventListener('touchstart', () => {
-        didLongPress = false;
-        didScroll = false;
-        pressTimer = setTimeout(() => {
-          didLongPress = true;
-          openActionSheet(card.dataset.id);
-        }, 500);
-      }, { passive: true });
+    const card = e.target.closest('.comic-card');
+    if (!card) return;
 
-      card.addEventListener('touchend', () => {
-        clearTimeout(pressTimer);
-        if (!didLongPress && !didScroll) {
-          openComic(card.dataset.id);
-        }
-      }, { passive: true });
+    gridTouchTarget = card.dataset.id;
+    gridDidLongPress = false;
+    gridDidScroll = false;
+    gridPressTimer = setTimeout(() => {
+      gridDidLongPress = true;
+      openActionSheet(gridTouchTarget);
+    }, 500);
+  }, { passive: true });
 
-      card.addEventListener('touchmove', () => {
-        didScroll = true;
-        clearTimeout(pressTimer);
-      }, { passive: true });
+  dom.comicsGrid.addEventListener('touchmove', () => {
+    gridDidScroll = true;
+    clearTimeout(gridPressTimer);
+  }, { passive: true });
 
-      // Desktop
-      card.addEventListener('click', (e) => {
-        if (e.pointerType === 'touch') return;
-        openComic(card.dataset.id);
-      });
+  dom.comicsGrid.addEventListener('touchend', (e) => {
+    clearTimeout(gridPressTimer);
+    // Heart button
+    const favBtn = e.target.closest('.card-favorite');
+    if (favBtn) {
+      toggleFavoriteFromButton(favBtn);
+      return;
+    }
+    if (gridTouchTarget && !gridDidLongPress && !gridDidScroll) {
+      openComic(gridTouchTarget);
+    }
+    gridTouchTarget = null;
+  }, { passive: true });
 
-      card.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        openActionSheet(card.dataset.id);
-      });
-    });
+  // Desktop click + contextmenu
+  dom.comicsGrid.addEventListener('click', (e) => {
+    if (e.pointerType === 'touch') return;
+    const favBtn = e.target.closest('.card-favorite');
+    if (favBtn) { toggleFavoriteFromButton(favBtn); return; }
+    const card = e.target.closest('.comic-card');
+    if (card) openComic(card.dataset.id);
+  });
+
+  dom.comicsGrid.addEventListener('contextmenu', (e) => {
+    const card = e.target.closest('.comic-card');
+    if (card) { e.preventDefault(); openActionSheet(card.dataset.id); }
+  });
+
+  async function toggleFavoriteFromButton(btn) {
+    const comicId = btn.dataset.favId;
+    const comic = state.comics.find(c => c.id === comicId);
+    if (!comic) return;
+    const isFav = comic.favorite && comic.favorite.isFavorite;
+    if (isFav) {
+      await api.removeFavorite(comicId);
+      comic.favorite = null;
+    } else {
+      await setFavoriteField(comicId, { isFavorite: true });
+    }
+    btn.classList.toggle('is-fav', !isFav);
+    updateCount();
   }
 
   // --- Action Sheet ---
