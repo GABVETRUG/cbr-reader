@@ -187,6 +187,28 @@ Il server stampa l'indirizzo di rete locale (es. `http://192.168.1.8:3000`) da a
 - Tap diretto per toggle (stopPropagation impedisce apertura fumetto)
 - Non serve più il long-press per la funzione base dei preferiti
 
+### v2.3 — PWA (Progressive Web App)
+
+**Installazione da home screen:**
+- L'app può essere aggiunta alla home screen di iPhone (Safari → Condividi → Aggiungi alla schermata Home) e Android (Chrome → Installa app)
+- Si apre in modalità standalone (senza barra browser), full-screen
+
+**Manifest (`manifest.json`):**
+- Nome: "Dylan Dog Reader", short: "DD Reader"
+- Display: standalone, orientamento libero
+- Icone: 192px, 512px, 512px maskable, Apple Touch Icon 180px
+- Tema e sfondo: `#0a0a0a` (nero profondo)
+
+**Service Worker (`sw.js`):**
+- Cache statica degli asset principali (HTML, CSS, JS, icone) all'install
+- Strategia network-first per le API (chiamate sempre al server, fallback cache)
+- Strategia cache-first per asset statici (CSS, JS, immagini), con aggiornamento in background
+- Pulizia automatica delle cache vecchie all'attivazione
+
+**Icone generate con sharp:**
+- Icona stilizzata con libro e scritta "DD" in ambra/oro su sfondo nero
+- 4 varianti: 192px, 512px, 512px maskable (padding extra), 180px Apple Touch
+
 ---
 
 ## Note tecniche

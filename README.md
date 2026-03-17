@@ -29,9 +29,11 @@ Built for browsing a **Dylan Dog** collection of 310 issues, but works with any 
 - Accessible from the reader toolbar or the action sheet in the library
 
 ### General
+- **PWA** — install on your home screen for a full-screen, app-like experience (iOS & Android)
 - **MongoDB** backend for persistent storage of progress, favorites, notes
 - **Mobile-first** — touch gestures, generous tap targets, smooth transitions
 - **Local network access** — open it on your phone from the same WiFi, no internet required
+- **Remote access** — use Tailscale (or similar VPN) to read from anywhere
 
 ## Tech Stack
 
@@ -148,13 +150,25 @@ cbr_reader/
 | GET | `/api/user-colors` | List color palette |
 | POST | `/api/user-colors` | Add custom color |
 
+## Install as App (PWA)
+
+**iPhone (Safari):**
+1. Open the reader URL in Safari
+2. Tap the **Share** icon (square with arrow)
+3. Tap **"Add to Home Screen"**
+
+**Android (Chrome):**
+- Tap the **"Install app"** banner, or: menu → "Install app"
+
+The app opens in standalone mode — no browser bar, full-screen, with a custom icon.
+
 ## Roadmap
 
 - [x] MongoDB for persistent storage
 - [x] Favorites with folders, color tags, and categories
 - [x] Per-comic notes
 - [x] "Stai leggendo" section with collapsible scroll
-- [ ] PWA support for home screen install
+- [x] PWA support for home screen install
 - [ ] Multi-library support (multiple comic directories)
 
 ## License
