@@ -21,7 +21,13 @@
     userCompartments: [],
     userColors: [],
     activeView: 'all',
-    actionSheetComicId: null
+    actionSheetComicId: null,
+    // Chunk loading settings
+    hideReadingOnFilter: localStorage.getItem('hideReadingOnFilter') === 'true', // default false (visible)
+    chunkEnabled: localStorage.getItem('chunkEnabled') === 'true',
+    chunkSize: parseInt(localStorage.getItem('chunkSize') || '15', 10),
+    chunkThreshold: parseInt(localStorage.getItem('chunkThreshold') || '2', 10),
+    loadedChunks: new Set() // tracks which chunks have been loaded
   };
 
   // --- DOM refs ---
@@ -77,6 +83,18 @@
     noteInput: $('#noteInput'),
     saveNoteBtn: $('#saveNoteBtn'),
     closeNotesBtn: $('#closeNotesBtn'),
+    // Settings
+    settingsToggle: $('#settingsToggle'),
+    settingsPanel: $('#settingsPanel'),
+    closeSettingsBtn: $('#closeSettingsBtn'),
+    hideReadingToggle: $('#hideReadingToggle'),
+    chunkToggle: $('#chunkToggle'),
+    chunkSettings: $('#chunkSettings'),
+    chunkSizeInput: $('#chunkSizeInput'),
+    chunkThresholdInput: $('#chunkThresholdInput'),
+    downloadQueue: $('#downloadQueue'),
+    downloadedList: $('#downloadedList'),
+    clearAllDownloadsBtn: $('#clearAllDownloadsBtn'),
     // Prompt dialog
     promptDialog: $('#promptDialog'),
     promptDialogTitle: $('#promptDialogTitle'),
@@ -156,9 +174,11 @@
   }
 
   function renderOrgBar() {
+    const downloadedCount = Object.keys(getDownloadedComics()).length;
     const chips = [
       `<button class="org-chip${state.activeView === 'all' ? ' active' : ''}" data-view="all">Tutti</button>`,
-      `<button class="org-chip${state.activeView === 'favorites' ? ' active' : ''}" data-view="favorites">Preferiti</button>`
+      `<button class="org-chip${state.activeView === 'favorites' ? ' active' : ''}" data-view="favorites">Preferiti</button>`,
+      `<button class="org-chip${state.activeView === 'downloaded' ? ' active' : ''}" data-view="downloaded">Scaricati${downloadedCount > 0 ? ` (${downloadedCount})` : ''}</button>`
     ];
     for (const f of state.userFolders) {
       chips.push(`<button class="org-chip${state.activeView === 'folder:' + f.name ? ' active' : ''}" data-view="folder:${escapeAttr(f.name)}">📁 ${escapeHtml(f.name)}</button>`);
@@ -190,6 +210,8 @@
       let matchView = true;
       if (state.activeView === 'favorites') {
         matchView = c.favorite && c.favorite.isFavorite;
+      } else if (state.activeView === 'downloaded') {
+        matchView = isDownloaded(c.id);
       } else if (state.activeView.startsWith('folder:')) {
         const fname = state.activeView.slice(7);
         matchView = c.favorite && c.favorite.folder === fname;
@@ -216,6 +238,12 @@
   // --- Reading Section ---
 
   function renderReadingSection() {
+    // Hide reading section entirely if toggle is on
+    if (state.hideReadingOnFilter) {
+      dom.readingSection.classList.add('hidden');
+      return;
+    }
+
     // Comics with progress, not finished, sorted by most recent
     const reading = state.comics
       .filter(c => c.progress && c.progress.page > 0 && c.progress.page < c.progress.totalPages - 1)
@@ -243,8 +271,40 @@
         </div>`;
     }).join('');
 
+    // Touch handling with long-press support for reading cards
     dom.readingRow.querySelectorAll('.reading-card').forEach(card => {
-      card.addEventListener('click', () => openComic(card.dataset.id));
+      let pressTimer = null;
+      let didLongPress = false;
+      let didScroll = false;
+
+      card.addEventListener('touchstart', () => {
+        didLongPress = false;
+        didScroll = false;
+        pressTimer = setTimeout(() => {
+          didLongPress = true;
+          openActionSheet(card.dataset.id);
+        }, 500);
+      }, { passive: true });
+
+      card.addEventListener('touchmove', () => {
+        didScroll = true;
+        clearTimeout(pressTimer);
+      }, { passive: true });
+
+      card.addEventListener('touchend', () => {
+        clearTimeout(pressTimer);
+        if (!didLongPress && !didScroll) openComic(card.dataset.id);
+      }, { passive: true });
+
+      card.addEventListener('click', (e) => {
+        if (e.pointerType === 'touch') return;
+        openComic(card.dataset.id);
+      });
+
+      card.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        openActionSheet(card.dataset.id);
+      });
     });
   }
 
@@ -395,6 +455,19 @@
     dom.folderActionLabel.textContent = fav && fav.folder ? `Cartella: ${fav.folder}` : 'Cartella';
     dom.compartmentActionLabel.textContent = fav && fav.compartment ? `Categoria: ${fav.compartment}` : 'Categoria';
 
+    // Mark as read label
+    const isRead = comic.progress && comic.progress.page >= comic.progress.totalPages - 1;
+    const markReadLabel = dom.actionSheet.querySelector('#markReadLabel');
+    markReadLabel.textContent = isRead ? 'Segna come non letto' : 'Segna come già letto';
+    dom.actionSheet.querySelector('[data-action="markRead"]').classList.toggle('is-active', isRead);
+
+    // Download label
+    const dlLabel = dom.actionSheet.querySelector('#downloadActionLabel');
+    const alreadyDl = isDownloaded(comicId);
+    dlLabel.textContent = alreadyDl ? 'Rimuovi download' : 'Scarica per offline';
+    const dlItem = dom.actionSheet.querySelector('[data-action="preDownload"]');
+    dlItem.classList.toggle('is-active', alreadyDl);
+
     // Render color palette
     renderColorPalette(fav ? fav.color : null);
 
@@ -489,6 +562,36 @@
     const comicId = state.actionSheetComicId;
     closeActionSheet();
     openNotesPanel(comicId);
+  });
+
+  dom.actionSheet.querySelector('[data-action="markRead"]').addEventListener('click', async () => {
+    const comicId = state.actionSheetComicId;
+    const comic = state.comics.find(c => c.id === comicId);
+    if (!comic) return;
+
+    const isRead = comic.progress && comic.progress.page >= comic.progress.totalPages - 1;
+
+    if (isRead) {
+      // Mark as unread — reset progress
+      await api.saveProgress(comicId, 0, comic.progress.totalPages);
+      comic.progress = { page: 0, totalPages: comic.progress.totalPages, timestamp: Date.now() };
+      closeActionSheet();
+      applyFilters();
+      showToast('Segnato come non letto');
+    } else {
+      // Mark as read — need page count
+      let totalPages = comic.progress ? comic.progress.totalPages : null;
+      if (!totalPages) {
+        const info = await api.getComicInfo(comicId);
+        totalPages = info.pageCount;
+      }
+      const lastPage = totalPages - 1;
+      await api.saveProgress(comicId, lastPage, totalPages);
+      comic.progress = { page: lastPage, totalPages, timestamp: Date.now() };
+      closeActionSheet();
+      applyFilters();
+      showToast('Segnato come già letto');
+    }
   });
 
   // --- Prompt Dialog ---
@@ -639,6 +742,8 @@
       dom.pageRange.max = state.totalPages - 1;
       dom.pageRange.value = state.currentPage;
 
+      state.loadedChunks = new Set();
+
       uiVisible = true;
       dom.readerHeader.classList.remove('chrome-hidden');
       document.querySelector('.reader-toolbar').classList.remove('chrome-hidden');
@@ -715,13 +820,62 @@
   }
 
   function loadVisiblePages() {
-    [state.currentPage - 1, state.currentPage, state.currentPage + 1].forEach(i => {
-      if (i < 0 || i >= state.totalPages) return;
-      const page = dom.swipeContainer.querySelector(`[data-page="${i}"]`);
-      if (!page) return;
-      const img = page.querySelector('img');
-      if (img && img.dataset.src && !img.src) img.src = img.dataset.src;
-    });
+    if (state.chunkEnabled) {
+      loadChunkForPage(state.currentPage);
+    } else {
+      // Default: load current + neighbors
+      [state.currentPage - 1, state.currentPage, state.currentPage + 1].forEach(i => {
+        loadPageImage(i, dom.swipeContainer);
+      });
+    }
+  }
+
+  function loadPageImage(pageIndex, container) {
+    if (pageIndex < 0 || pageIndex >= state.totalPages || !container) return;
+    const page = container.querySelector(`[data-page="${pageIndex}"]`);
+    if (!page) return;
+    const img = page.querySelector('img');
+    if (img && img.dataset.src && !img.src) img.src = img.dataset.src;
+  }
+
+  // --- Chunk Prefetcher (DASH-style) ---
+
+  function getChunkIndex(pageIndex) {
+    return Math.floor(pageIndex / state.chunkSize);
+  }
+
+  function loadChunkForPage(pageIndex) {
+    const chunkIdx = getChunkIndex(pageIndex);
+    const container = state.readingMode === 'swipe' ? dom.swipeContainer : dom.scrollContainer;
+
+    // Load current chunk
+    loadChunk(chunkIdx, container);
+
+    // Also load previous page for smooth back-swipe
+    if (pageIndex > 0) loadPageImage(pageIndex - 1, container);
+
+    // Check if we need to prefetch next chunk
+    const chunkStart = chunkIdx * state.chunkSize;
+    const chunkEnd = Math.min(chunkStart + state.chunkSize, state.totalPages);
+    const pagesUntilChunkEnd = chunkEnd - pageIndex - 1;
+
+    if (pagesUntilChunkEnd <= state.chunkThreshold) {
+      loadChunk(chunkIdx + 1, container);
+    }
+  }
+
+  function loadChunk(chunkIdx, container) {
+    if (state.loadedChunks.has(chunkIdx)) return;
+    const start = chunkIdx * state.chunkSize;
+    if (start >= state.totalPages) return;
+    const end = Math.min(start + state.chunkSize, state.totalPages);
+
+    state.loadedChunks.add(chunkIdx);
+    // Stagger loading to avoid flooding the network
+    for (let i = start; i < end; i++) {
+      const delay = (i - start) * 50; // 50ms apart
+      setTimeout(() => loadPageImage(i, container), delay);
+    }
   }
 
   function setupSwipeGestures() {
@@ -775,16 +929,22 @@
     }
     dom.scrollContainer.innerHTML = pages.join('');
 
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const img = entry.target;
-          if (img.dataset.src) { img.src = img.dataset.src; img.removeAttribute('data-src'); }
-          observer.unobserve(img);
-        }
-      });
-    }, { rootMargin: '400px' });
-    dom.scrollContainer.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
+    if (state.chunkEnabled) {
+      // Chunk mode: load initial chunk(s) for current position
+      loadChunkForPage(state.currentPage);
+    } else {
+      // Default: IntersectionObserver lazy load
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const img = entry.target;
+            if (img.dataset.src) { img.src = img.dataset.src; img.removeAttribute('data-src'); }
+            observer.unobserve(img);
+          }
+        });
+      }, { rootMargin: '400px' });
+      dom.scrollContainer.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
+    }
 
     dom.scrollReader.addEventListener('click', (e) => {
       if (e.target.closest('button, input, a')) return;
@@ -812,6 +972,7 @@
       state.currentPage = currentPage;
       updateReaderUI();
       debouncedSaveProgress();
+      if (state.chunkEnabled) loadChunkForPage(currentPage);
     }
   }
 
@@ -935,16 +1096,268 @@
   });
 
   // --- Reading section collapse on scroll ---
-  let lastScrollTop = 0;
   dom.comicsGrid.addEventListener('scroll', () => {
     const st = dom.comicsGrid.scrollTop;
-    if (st > 60) {
-      dom.readingSection.classList.add('collapsed');
-    } else if (st < 10) {
-      dom.readingSection.classList.remove('collapsed');
-    }
-    lastScrollTop = st;
+    if (st > 60) dom.readingSection.classList.add('collapsed');
+    else if (st < 10) dom.readingSection.classList.remove('collapsed');
   }, { passive: true });
+
+  // --- Settings Panel ---
+
+  function openSettings() {
+    dom.hideReadingToggle.checked = state.hideReadingOnFilter;
+    dom.chunkToggle.checked = state.chunkEnabled;
+    dom.chunkSettings.classList.toggle('hidden', !state.chunkEnabled);
+    dom.chunkSizeInput.value = state.chunkSize;
+    dom.chunkThresholdInput.value = state.chunkThreshold;
+    renderDownloadQueue();
+    renderDownloadedList();
+    dom.settingsPanel.classList.remove('hidden');
+  }
+
+  function closeSettings() {
+    dom.settingsPanel.classList.add('hidden');
+  }
+
+  function saveChunkSettings() {
+    state.chunkEnabled = dom.chunkToggle.checked;
+    state.chunkSize = parseInt(dom.chunkSizeInput.value, 10) || 15;
+    state.chunkThreshold = parseInt(dom.chunkThresholdInput.value, 10) || 2;
+    localStorage.setItem('chunkEnabled', state.chunkEnabled);
+    localStorage.setItem('chunkSize', state.chunkSize);
+    localStorage.setItem('chunkThreshold', state.chunkThreshold);
+  }
+
+  dom.settingsToggle.addEventListener('click', openSettings);
+  dom.closeSettingsBtn.addEventListener('click', closeSettings);
+  dom.settingsPanel.querySelector('.settings-panel-backdrop').addEventListener('click', closeSettings);
+
+  dom.hideReadingToggle.addEventListener('change', () => {
+    state.hideReadingOnFilter = dom.hideReadingToggle.checked;
+    localStorage.setItem('hideReadingOnFilter', state.hideReadingOnFilter);
+    applyFilters();
+  });
+
+  dom.chunkToggle.addEventListener('change', () => {
+    dom.chunkSettings.classList.toggle('hidden', !dom.chunkToggle.checked);
+    saveChunkSettings();
+  });
+
+  dom.chunkSizeInput.addEventListener('change', saveChunkSettings);
+  dom.chunkThresholdInput.addEventListener('change', saveChunkSettings);
+
+  // Stepper buttons
+  document.querySelectorAll('.stepper-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById(btn.dataset.target);
+      const delta = parseInt(btn.dataset.delta, 10);
+      const min = parseInt(input.min, 10);
+      const max = parseInt(input.max, 10);
+      input.value = Math.max(min, Math.min(max, parseInt(input.value, 10) + delta));
+      input.dispatchEvent(new Event('change'));
+    });
+  });
+
+  // --- Pre-download Manager ---
+
+  // --- Downloaded comics tracking ---
+
+  function getDownloadedComics() {
+    try { return JSON.parse(localStorage.getItem('downloadedComics') || '{}'); } catch { return {}; }
+  }
+
+  function markAsDownloaded(comicId, totalPages) {
+    const downloaded = getDownloadedComics();
+    downloaded[comicId] = { totalPages, timestamp: Date.now() };
+    localStorage.setItem('downloadedComics', JSON.stringify(downloaded));
+  }
+
+  function removeDownloaded(comicId) {
+    const downloaded = getDownloadedComics();
+    delete downloaded[comicId];
+    localStorage.setItem('downloadedComics', JSON.stringify(downloaded));
+  }
+
+  function isDownloaded(comicId) {
+    return comicId in getDownloadedComics();
+  }
+
+  async function deleteDownloadedComic(comicId) {
+    const downloaded = getDownloadedComics();
+    const info = downloaded[comicId];
+    if (!info) return;
+
+    // Remove pages and cover from cache
+    if ('caches' in window) {
+      const cache = await caches.open('cbr-reader-v2');
+      const keys = await cache.keys();
+      const prefix = `/api/comics/${comicId}/`;
+      const toDelete = keys.filter(r => new URL(r.url).pathname.startsWith(prefix));
+      await Promise.all(toDelete.map(r => cache.delete(r)));
+    }
+
+    removeDownloaded(comicId);
+    downloadManager.removeFromQueue(comicId);
+    renderOrgBar();
+  }
+
+  const downloadManager = {
+    queue: [], // { comicId, title, totalPages, loadedPages, status }
+
+    async startDownload(comicId) {
+      const comic = state.comics.find(c => c.id === comicId);
+      if (!comic) return;
+
+      if (isDownloaded(comicId)) {
+        showToast('Già scaricato');
+        return;
+      }
+
+      if (this.queue.find(d => d.comicId === comicId)) {
+        showToast('Download già in corso');
+        return;
+      }
+
+      const info = await api.getComicInfo(comicId);
+
+      const item = {
+        comicId,
+        title: comic.title,
+        totalPages: info.pageCount,
+        loadedPages: 0,
+        status: 'downloading'
+      };
+      this.queue.push(item);
+      renderDownloadQueue();
+      showToast(`Download: ${comic.title}`);
+
+      // Also cache cover
+      if ('caches' in window) {
+        try {
+          const coverRes = await fetch(`/api/comics/${comicId}/cover`);
+          if (coverRes.ok) {
+            const cache = await caches.open('cbr-reader-v2');
+            await cache.put(coverRes.url, coverRes.clone());
+          }
+        } catch {}
+      }
+
+      // Download pages in chunks
+      const chunkSize = state.chunkSize || 15;
+      for (let start = 0; start < item.totalPages; start += chunkSize) {
+        const end = Math.min(start + chunkSize, item.totalPages);
+        const promises = [];
+        for (let i = start; i < end; i++) {
+          promises.push(
+            fetch(`/api/comics/${comicId}/pages/${i}`)
+              .then(async res => {
+                if (res.ok && 'caches' in window) {
+                  const cache = await caches.open('cbr-reader-v2');
+                  await cache.put(res.url, res.clone());
+                }
+                item.loadedPages++;
+                renderDownloadQueue();
+              })
+              .catch(() => {})
+          );
+        }
+        await Promise.all(promises);
+      }
+
+      item.status = 'done';
+      markAsDownloaded(comicId, item.totalPages);
+      renderDownloadQueue();
+      renderOrgBar();
+      showToast(`Scaricato: ${comic.title}`);
+    },
+
+    removeFromQueue(comicId) {
+      this.queue = this.queue.filter(d => d.comicId !== comicId);
+      renderDownloadQueue();
+    }
+  };
+
+  function renderDownloadQueue() {
+    if (!dom.downloadQueue) return;
+    if (downloadManager.queue.length === 0) {
+      dom.downloadQueue.innerHTML = '';
+      return;
+    }
+    dom.downloadQueue.innerHTML = downloadManager.queue.map(d => {
+      const pct = Math.round((d.loadedPages / d.totalPages) * 100);
+      if (d.status === 'done') {
+        return `<div class="download-item">
+          <div class="download-item-info">
+            <div class="download-item-title">${escapeHtml(d.title)}</div>
+            <div class="download-item-done">Completato</div>
+          </div>
+        </div>`;
+      }
+      return `<div class="download-item">
+        <div class="download-item-info">
+          <div class="download-item-title">${escapeHtml(d.title)}</div>
+          <div class="download-item-progress"><div class="download-item-progress-fill" style="width:${pct}%"></div></div>
+          <div class="download-item-status">${d.loadedPages}/${d.totalPages} pagine (${pct}%)</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderDownloadedList() {
+    const downloaded = getDownloadedComics();
+    const ids = Object.keys(downloaded);
+
+    dom.clearAllDownloadsBtn.classList.toggle('hidden', ids.length === 0);
+
+    if (ids.length === 0) {
+      dom.downloadedList.innerHTML = '';
+      return;
+    }
+
+    dom.downloadedList.innerHTML = ids.map(id => {
+      const comic = state.comics.find(c => c.id === id);
+      const title = comic ? comic.title : id;
+      return `<div class="downloaded-item" data-dl-id="${id}">
+        <span class="downloaded-item-title">${escapeHtml(title)}</span>
+        <button class="downloaded-item-remove" aria-label="Rimuovi">&times;</button>
+      </div>`;
+    }).join('');
+
+    dom.downloadedList.querySelectorAll('.downloaded-item-remove').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.closest('.downloaded-item').dataset.dlId;
+        await deleteDownloadedComic(id);
+        renderDownloadedList();
+        applyFilters();
+        showToast('Download rimosso');
+      });
+    });
+  }
+
+  dom.clearAllDownloadsBtn.addEventListener('click', async () => {
+    const downloaded = getDownloadedComics();
+    const ids = Object.keys(downloaded);
+    for (const id of ids) {
+      await deleteDownloadedComic(id);
+    }
+    renderDownloadedList();
+    applyFilters();
+    showToast(`${ids.length} download rimossi`);
+  });
+
+  // Pre-download from action sheet
+  dom.actionSheet.querySelector('[data-action="preDownload"]').addEventListener('click', async () => {
+    const comicId = state.actionSheetComicId;
+    if (isDownloaded(comicId)) {
+      await deleteDownloadedComic(comicId);
+      closeActionSheet();
+      applyFilters();
+      showToast('Download rimosso');
+    } else {
+      closeActionSheet();
+      downloadManager.startDownload(comicId);
+    }
+  });
 
   // --- Init ---
   initLibrary();

@@ -236,6 +236,52 @@ Il server stampa l'indirizzo di rete locale (es. `http://192.168.1.8:3000`) da a
 - Tap target dei pulsanti toolbar portati a `min-height: 48px` (minimo raccomandato Apple/Google)
 - Padding interno pulsanti aumentato (`8px 14px` invece di `6px 12px`)
 
+### v2.6 — Chunk loading DASH-style, pre-download offline, gestione scaricati
+
+**Streaming pagine (DASH-like):**
+- Nuovo pannello Impostazioni (icona ingranaggio nell'header libreria)
+- Toggle "Chunk loading" per attivare il caricamento a blocchi durante la lettura
+- Dimensione blocco configurabile (default 15 pagine, stepper ±5)
+- Soglia pre-fetch configurabile (default 2 pagine prima della fine del chunk)
+- Caricamento staggered (50ms tra ogni pagina) per non saturare la rete
+- Funziona sia in modalità swipe che scroll
+
+**Pre-download offline:**
+- Pulsante "Scarica per offline" nell'action sheet (long-press)
+- Download a blocchi con barra di progresso nelle impostazioni
+- Pagine e copertina cachate nel service worker per lettura senza connessione
+- Chip "Scaricati" nella barra organizzazione con conteggio
+- Filtro per mostrare solo i fumetti scaricati
+
+**Rimozione download:**
+- Nell'action sheet: "Rimuovi download" per fumetti già scaricati (rimuove solo dalla cache, non dalla cartella originale)
+- Nelle impostazioni: lista completa dei fumetti scaricati con pulsante × per rimuoverli singolarmente
+- Pulsante "Rimuovi tutti i download" in rosso per cancellare tutto
+
+### v2.7 — Fix long-press, safe area bottom-sheet, selezione testo
+
+- Aggiunto `user-select: none` e `-webkit-touch-callout: none` sulle card per impedire selezione testo nativa durante long-press
+- Aggiunto `+ 12px` extra oltre la safe area su tutti i bottom-sheet (action sheet, pannello note, impostazioni)
+- Toggle nelle impostazioni: "Nascondi Stai leggendo" per nascondere/mostrare la sezione a piacimento
+
+### v2.8 — "Segna come già letto" e miglioramenti sezione "Stai leggendo"
+
+**Segna come già letto:**
+- Nuovo pulsante nell'action sheet (long-press) con icona check
+- "Segna come già letto" → imposta progresso all'ultima pagina (100%)
+- "Segna come non letto" → resetta il progresso a pagina 0 (toggle bidirezionale)
+- Barra di progresso sulla card si aggiorna immediatamente
+
+**Long-press su "Stai leggendo":**
+- Le card nella sezione "Stai leggendo" ora supportano long-press per aprire l'action sheet
+- Protezione scroll orizzontale (il long-press si annulla se il dito si muove)
+
+**Separazione visiva "Stai leggendo":**
+- Contenitore con sfondo rialzato (`--bg-surface`), bordi arrotondati, bordo sottile
+- Titolo "STAI LEGGENDO" in ambra, uppercase, stile etichetta di sezione
+- Margine inferiore di 12px prima della griglia
+- Transizione smooth su collapse (sfondo, bordi, margini inclusi)
+
 ---
 
 ## Note tecniche

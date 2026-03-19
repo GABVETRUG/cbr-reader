@@ -33,6 +33,9 @@
         <button id="filterToggle" class="icon-btn" aria-label="Filtra">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
         </button>
+        <button id="settingsToggle" class="icon-btn" aria-label="Impostazioni">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
       </div>
     </header>
 
@@ -188,6 +191,14 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
           <span>Note</span>
         </button>
+        <button class="action-item" data-action="markRead">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <span id="markReadLabel">Segna come già letto</span>
+        </button>
+        <button class="action-item" data-action="preDownload">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span id="downloadActionLabel">Scarica per offline</span>
+        </button>
       </div>
     </div>
   </div>
@@ -201,6 +212,70 @@
       <div class="prompt-dialog-actions">
         <button id="promptDialogCancel" class="prompt-btn">Annulla</button>
         <button id="promptDialogOk" class="accent-btn">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Panel -->
+  <div id="settingsPanel" class="settings-panel hidden">
+    <div class="settings-panel-backdrop"></div>
+    <div class="settings-panel-content">
+      <div class="settings-header">
+        <span>Impostazioni</span>
+        <button id="closeSettingsBtn" class="icon-btn-sm" aria-label="Chiudi">&times;</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-section">
+          <h3>Libreria</h3>
+          <div class="setting-row">
+            <label for="hideReadingToggle">Nascondi "Stai leggendo"</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="hideReadingToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <p class="settings-desc">Se attivo, la sezione "Stai leggendo" viene nascosta dalla libreria.</p>
+        </div>
+        <div class="settings-section">
+          <h3>Streaming pagine</h3>
+          <p class="settings-desc">Carica le pagine a blocchi durante la lettura, pre-scaricando il blocco successivo in anticipo (stile DASH streaming).</p>
+          <div class="setting-row">
+            <label for="chunkToggle">Chunk loading</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="chunkToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div id="chunkSettings" class="setting-sub hidden">
+            <div class="setting-row">
+              <label for="chunkSizeInput">Dimensione blocco</label>
+              <div class="setting-stepper">
+                <button class="stepper-btn" data-target="chunkSizeInput" data-delta="-5">-</button>
+                <input type="number" id="chunkSizeInput" value="15" min="5" max="50" step="5">
+                <button class="stepper-btn" data-target="chunkSizeInput" data-delta="5">+</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label for="chunkThresholdInput">Pre-fetch a pagine dalla fine</label>
+              <div class="setting-stepper">
+                <button class="stepper-btn" data-target="chunkThresholdInput" data-delta="-1">-</button>
+                <input type="number" id="chunkThresholdInput" value="2" min="1" max="10">
+                <button class="stepper-btn" data-target="chunkThresholdInput" data-delta="1">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3>Pre-download offline</h3>
+          <p class="settings-desc">Scarica interi fumetti per leggerli senza connessione. Usa il menu contestuale (long-press) su un fumetto per avviare il download.</p>
+          <div id="downloadQueue" class="download-queue">
+            <!-- Active downloads shown here -->
+          </div>
+          <div id="downloadedList" class="downloaded-list">
+            <!-- Downloaded comics listed here -->
+          </div>
+          <button id="clearAllDownloadsBtn" class="danger-btn hidden">Rimuovi tutti i download</button>
+        </div>
       </div>
     </div>
   </div>
