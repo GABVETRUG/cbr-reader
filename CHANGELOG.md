@@ -227,6 +227,15 @@ Il server stampa l'indirizzo di rete locale (es. `http://192.168.1.8:3000`) da a
 - `-webkit-overflow-scrolling: touch` sulla griglia per scroll nativo iOS
 - Placeholder statico (colore solido) al posto dell'animazione shimmer
 
+### v2.5 — Fix toolbar troppo vicina alla safe area
+
+**Problema**: I pulsanti della toolbar del reader (Libreria, Note, Swipe, slider pagine) erano troppo a ridosso della safe area del telefono, rendendo difficile il tap, specialmente per lo scorrimento rapido delle pagine.
+
+**Modifiche:**
+- Aumentato padding dei controlli toolbar (`10px 12px 14px` invece di `8px 12px`)
+- Tap target dei pulsanti toolbar portati a `min-height: 48px` (minimo raccomandato Apple/Google)
+- Padding interno pulsanti aumentato (`8px 14px` invece di `6px 12px`)
+
 ---
 
 ## Note tecniche
